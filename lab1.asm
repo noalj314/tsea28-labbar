@@ -48,6 +48,8 @@ main:
 	strb r1,[r0]
 
 activate:
+	mov r7, #0
+	mov r8, #0 
  	bl activatealarm
 
 clearinp:
@@ -84,9 +86,34 @@ lockkey:
  	bne lockkey
  	b activate
 
+printwrongs:
+	push{lr}
+	add r8, r8, #0x30 ;; för att göra det till ascci
+	mov r0, r8
+	bl printchar ;; skriver ut tiotalet
+	add r7, r7, #0x30
+	mov r0, r7
+	bl printchar ;; skriver ut entalet
+	sub r8, r8, #0x30 ;; för att få den att kunna räkna igen
+	sub r7, r7, #0x30 
+	pop{lr}
+	bx lr
+
+
 wrongstr:
 	.string "Felaktig kod!", 10, 13
 ; Funktion: Skriver ut str¨angen mha subrutinen printchar
+
+increment:
+	cmp r7, #9
+	beq incrementtens
+	add r7, r7, #1
+	bx lr 
+
+incrementtens:
+	add r8, r8, #1
+	mov r7, #0
+	bx lr
 
 endloop:
 	b endloop
@@ -101,7 +128,7 @@ stringloop:
    bl printchar ;; vi printar en karaktär
    add r4, r4, #1 ;; lägg till 1 i r4
    add r6, r6, #1 ;; lägg till 1 i r6
-   cmp r5, r6 ;; jämför r5 r6
+   cmp r5, r6 ;; jämför r5 r6, r5 är ju längden på strängen
    bne stringloop ;; om inte lika så loopar vi tillbaka
    pop {lr} ;; om lika så återvänder vi till länkregistret
    bx lr
