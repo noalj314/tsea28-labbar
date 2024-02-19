@@ -49,7 +49,7 @@ main:
 
 activate:
 	mov r7, #0
-	mov r8, #0 
+	mov r8, #0
  	bl activatealarm
 
 clearinp:
@@ -74,6 +74,7 @@ wrongcode:
 	adr r4, wrongstr
 	mov r5, #13 ;; längden på strängen som skickas in
 	bl printstring
+	bl printwrongs
 	b clearinp
 
 deactivate:
@@ -95,7 +96,11 @@ printwrongs:
 	mov r0, r7
 	bl printchar ;; skriver ut entalet
 	sub r8, r8, #0x30 ;; för att få den att kunna räkna igen
-	sub r7, r7, #0x30 
+	sub r7, r7, #0x30
+	mov r0, #0x0a
+	bl printchar
+	mov r0, #0x0d
+	bl printchar
 	pop{lr}
 	bx lr
 
@@ -108,7 +113,7 @@ increment:
 	cmp r7, #9
 	beq incrementtens
 	add r7, r7, #1
-	bx lr 
+	bx lr
 
 incrementtens:
 	add r8, r8, #1
@@ -126,10 +131,11 @@ printstring:
 stringloop:
    ldrb r0, [r4] ;; ladda ett byte från r4 och ha det temporärt i r0
    bl printchar ;; vi printar en karaktär
-   add r4, r4, #1 ;; lägg till 1 i r4
+   add r4, r4, #1 ;; lägg till 1 i r4f
    add r6, r6, #1 ;; lägg till 1 i r6
    cmp r5, r6 ;; jämför r5 r6, r5 är ju längden på strängen
    bne stringloop ;; om inte lika så loopar vi tillbaka
+
    pop {lr} ;; om lika så återvänder vi till länkregistret
    bx lr
 
@@ -184,23 +190,16 @@ waitForKeyUp: ;; kollar ifall knappen fortfarande är nedtryckt
 addkey:
 	mov r0,#(0x20001000 & 0xffff)
 	movt r0,#(0x20001000 >> 16)
-	mov r1,#(0x20001001 & 0xffff)
-	movt r1,#(0x20001001 >> 16)
-	mov r2,#(0x20001002 & 0xffff)
-	movt r2,#(0x20001002 >> 16)
-	mov r3,#(0x20001003 & 0xffff)
-	movt r3,#(0x20001003 >> 16)
 
+	ldr r1, [r0]
+	lsr r1, r1, #8
+	lsl r2, r4, #24 ; Flytta r4 till de högsta 8 bitarna.
+    orr r1, r1, r2 ; Kombinera den nya koden med de skiftade befintliga koderna.
 
-	ldrb r5, [r2]
-	strb r5, [r3]
-	ldrb r5, [r1]
-	strb r5, [r2]
-	ldrb r5, [r0]
-	strb r5, [r1]
-	strb r4, [r0]
+    ; Skriv tillbaka det uppdaterade värdet till minnet.
+    str r1, [r0]
 
-	bx lr
+    bx lr
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -212,24 +211,16 @@ addkey:
 ;
 ; Funktion: S¨atter inneh˚allet p˚a 0x20001000-0x20001003 till 0xFF
 clearinput:
-; Lagrar alla relevanta minnesadresser till register
+; Sätter register r5 till 0xFF och uppdaterar sedan resterande register med det värdet
+	mov r1, #0xFFFFFFFF
+
 	mov r0,#(0x20001000 & 0xffff)
 	movt r0,#(0x20001000 >> 16)
-	mov r1,#(0x20001001 & 0xffff)
-	movt r1,#(0x20001001 >> 16)
-	mov r2,#(0x20001002 & 0xffff)
-	movt r2,#(0x20001002 >> 16)
-	mov r3,#(0x20001003 & 0xffff)
-	movt r3,#(0x20001003 >> 16)
 
-; Sätter register r5 till 0xFF och uppdaterar sedan resterande register med det värdet
-	mov r5, #0xFF
-	strb r5, [r0]
-	strb r5, [r1]
-	strb r5, [r2]
-	strb r5, [r3]
 
-	bx lr
+    str r1, [r0]
+
+    bx lr
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -253,7 +244,10 @@ checkcode:
 	bx lr
 
 badCode:
-	mov r4, #0 ; annars returnera 0
+	push{lr}
+	bl increment
+	mov r4, #0x0
+	pop{lr}
 	bx lr
 
 
