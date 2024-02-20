@@ -145,24 +145,46 @@ Righttextend     .string "==============SLUT h",0xf6, "ger",13,10,0
 ;; + lab group participant LiU-ID: kevma271
 
 
-
 main:
+	bl reset
+
 	bl inituart
 	bl initGPIOB
 	bl initGPIOD
 	bl initGPIOE
+	bl initint
 
 
 
 mainloop:
+	CPSID i
 	bl SKBAK ;16*40 = 640
 	mov r1, #1000
 	bl DELAY
-	nop
-    b    mainloop
+	CPSIE i
+	b mainloop
 
 
+reset:
+	mov r0, #(0x00010203 & 0xffff)
+	movt r0, #(0x00010203 >> 16)
 
+	mov r1, #(0x10111213 & 0xffff)
+	movt r1, #(0x10111213 >> 16)
+
+	mov r2, #(0x20212223 & 0xffff)
+	movt r2, #(0x20212223 >> 16)
+
+	mov r3, #(0x30313233 & 0xffff)
+	movt r3, #(0x30313233 >> 16)
+
+	mov r4, #(0x40414243 & 0xffff)
+	movt r4, #(0x40414243 >> 16)
+
+	mov r12, #(0xc0c1c2c & 0xffff)
+	movt r12, #(0xc0c1c2c >> 16)
+
+	bx lr
 
     .align 0x100    ; Place interrupt routine for GPIO port D at an adress that ends with two zeros
 ;***********************************************
@@ -170,8 +192,15 @@ mainloop:
 ;* Place your interrupt routine for GPIO port D here
 ;*
 intgpiod:
-	mov r0, #GPIOD_GPIODATA ; dataregister port D
-	bl SKAVH
+	mov r0, #(GPIOD_GPIOICR & 0xffff)
+	movt r0, #(GPIOD_GPIOICR >> 16)
+	mov r1, #0x80
+	str r1,[r0]
+	push{lr}
+	bl SKAVV
+	pop{lr}
+	bx lr
+
                      ; Here is the interrupt routine triggered by port D
 
 
@@ -184,8 +213,14 @@ intgpiod:
 ;* Place your interrupt routine for GPIO port E here
 ;*
 intgpioe:
-	mov r0, #GPIOE_GPIODATA ; dataregister port E
-	bl SKAVV
+	mov r0, #(GPIOE_GPIOICR & 0xffff)
+	movt r0, #(GPIOE_GPIOICR >> 16)
+	mov r1, #0x10
+	str r1,[r0]
+	push{lr}
+	bl SKAVH
+	pop{lr}
+	bx lr
 
                     ; Here is the interrupt routine triggered by port E
 
@@ -634,6 +669,7 @@ loop1:
     str  r0,[r1,#UARTDR]    ; send character
     pop  {r1}
     bx   lr
+
 
 
 
