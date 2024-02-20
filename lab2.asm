@@ -147,16 +147,19 @@ Righttextend     .string "==============SLUT h",0xf6, "ger",13,10,0
 
 
 main:
-	b inituart
-	b initGPIOB
-	b initGPIOD
-	b initGPIOE
+	bl inituart
+	bl initGPIOB
+	bl initGPIOD
+	bl initGPIOE
 
-	adr r3, Bakgrundstext
+
 
 mainloop:
-	bl slowprintstring
-    b    mainloop    ; Remove
+	bl SKBAK ;16*40 = 640
+	mov r1, #1000
+	bl DELAY
+	nop
+    b    mainloop
 
 
 
@@ -167,6 +170,8 @@ mainloop:
 ;* Place your interrupt routine for GPIO port D here
 ;*
 intgpiod:
+	mov r0, #GPIOD_GPIODATA ; dataregister port D
+	bl SKAVH
                      ; Here is the interrupt routine triggered by port D
 
 
@@ -179,6 +184,8 @@ intgpiod:
 ;* Place your interrupt routine for GPIO port E here
 ;*
 intgpioe:
+	mov r0, #GPIOE_GPIODATA ; dataregister port E
+	bl SKAVV
 
                     ; Here is the interrupt routine triggered by port E
 
@@ -242,7 +249,7 @@ rightloop:
     bx   lr
 
 ;* DELAY:
-;* r1 = number of mskuk
+;* r1 = number of ms
 DELAY:
     push {r0,r1}
 loop_millisecond:
@@ -489,7 +496,7 @@ initGPIOF:
     bx   lr
 
 
-; initint, initialize interrupt management	.string "kuk", 3,10
+; initint, initialize interrupt management
 
 ; destroys r0,r1
 ; Enable interrupts from pin 7 port D and pin 4 port E
@@ -603,7 +610,7 @@ nextchar:
     cmp  r0,#0
     beq  slowprintstringdone
     bl   printchar
-    mov  r1,#40
+    mov  r1,#40 ; ändra till 1000 ms
     bl   DELAY
     b    nextchar
 slowprintstringdone:
