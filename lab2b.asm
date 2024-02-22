@@ -144,11 +144,11 @@ Righttextend     .string "==============SLUT h",0xf6, "ger",13,10,0
 ;;                 student LiU-ID: noalj314
 ;; + lab group participant LiU-ID: kevma271
 
-; 0x20001000, r5 riktning
-; 0x20001001, r6 servestatus
-; 0x20001002, r7 poäng vänster
-; 0x20001003, r8 poäng höger
-;s
+;; 0x20001000, direction
+;; 0x20002000, serve status
+;; 0x20003000, leftplayer's score
+;; 0x20004000, rightplayer's score
+;;
 
 main:
 	bl initGPIOD
@@ -157,121 +157,171 @@ main:
 	bl inituart
 	bl initint
 
-mainloop:
+initialize:
+	mov r0, #(0x20003000 & 0xffff)
+	movt r0, #(0x20003000 >> 16)
+	mov r1, #0 ; reset leftplayer's score
+	str r1, [r0]
 
-	mov r5, #(0x20001000 & 0xffff)
-	movt r5, #(0x20001000 >> 16)
-	mov r0, #0x00 ; bollen börjar att gå till vänster
-	str r0, [r5]
+	mov r0, #(0x20004000 & 0xffff)
+	movt r0, #(0x20004000 >> 16)
+	mov r1, #-1 ; reset rightplayer's score
+	str r1, [r0]
 
-	mov r6, #(0x20001001 & 0xffff)
-	movt r6, #(0x20001001 >> 16) ;; bollen börjar från höger
-	mov r0, #0xFF
-	str r0, [r6]
+	mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	mov r1, #0x01 ; turn on rightest led
+	str r1, [r0]
 
-	mov r7, #(0x20001002 & 0xffff)
-	movt r7, #(0x20001002 >> 16)
-	mov r0, #0 ; nollställ pooäng
-	str r0, [r7]
+rightstart:
+	mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	mov r1, #0x01 ; turn on rightest led
+	str r1, [r0]
 
-	mov r8, #(0x20001003 & 0xffff)
-	movt r8, #(0x20001003 >> 16)
-	str r0, [r8]
+	mov r0, #(0x20001000 & 0xffff)
+	movt r0, #(0x20001000 >> 16)
+	mov r1, #0x00 ; set direction left
+	str r1, [r0]
 
+	mov r0, #(0x20002000 & 0xffff)
+	movt r0, #(0x20002000 >> 16)
+	mov r1, #0xFF ; set serve status active
+	str r1, [r0]
 
-	mov r9, #(GPIOB_GPIODATA & 0xffff)
-	movt r9, #(GPIOB_GPIODATA >> 16)
-	mov r10, #0x01 ; lysdiod höger tänds
-	str r10, [r9]
-	;b mainloop
+	mov r0, #(0x20004000 & 0xffff)
+	movt r0, #(0x20004000 >> 16)
+	ldr r1, [r0]
+	add r1, r1, #1 ; increment one to rightplayer's score
+	str r1, [r0]
 
-newloop:
-	b newloop
+	b serveloop
+
+leftstart:
+	mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	mov r1, #0x80 ; turn on leftest led
+	str r1, [r0]
+
+	mov r0, #(0x20001000 & 0xffff)
+	movt r0, #(0x20001000 >> 16)
+	mov r1, #0xFF ; set direction right
+	str r1, [r0]
+
+	mov r0, #(0x20002000 & 0xffff)
+	movt r0, #(0x20002000 >> 16)
+	mov r1, #0xFF ; set serve status active
+	str r1, [r0]
+
+	mov r0, #(0x20003000 & 0xffff)
+	movt r0, #(0x20003000 >> 16)
+	ldr r1, [r0]
+	add r1, r1, #1 ; increment one to leftplayer's score
+	str r1, [r0]
+
 
 serveloop:
-	;time to serve?
+	mov r0, #(0x20002000 & 0xffff)
+	movt r0, #(0x20002000 >> 16)
+	ldr r1, [r0]
+	cmp r1, #0xFF ; check serve status
+	beq serveloop
+	bl move
+	mov r1, #1000
+	bl DELAY
 
-	;beq yes serve subrutin
+	b serveloop
 
-	;no? flytta bollen i riktning
-	bne moveball
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-	;delay 1 sek
-	;Dags för poäng nej = flytta bollen, ja= poäng + serveloop
-
-moveball:
-	cmp r5, #0x00
+move:
+	mov r0, #(0x20001000 & 0xffff)
+	movt r0, #(0x20001000 >> 16)
+	ldr r1, [r0]
+	cmp r1, #0x00 ; check direction
 	bne moveright
-	beq moveleft
 
-
-moveleft:
-	LSL r10, r10, #1
-	;mov r0, #0x02 ; lysdiod höger tänds
-	str r10, [r9]
-	bx lr
-
+	mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	ldr r1, [r0]
+	LSL r1, r1, #
+	str r1, [r0]
+	b moveend
 
 moveright:
-	LSR r10, r10, #1
+	mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	ldr r1, [r0]
+	LSR r1, r1, #1
+	str r1, [r0]
 
-	str r10, [r9]
+moveend:
 	bx lr
 
-
-pointleft:
-	;mov r0, #(x20001001 & 0xffff)
-	;movt r0, #(x20001001 & 0xffff)
-	;r0,
-
-
-
     .align 0x100    ; Place interrupt routine for GPIO port D at an adress that ends with two zeros
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;***********************************************
 ;*
-;* Place your interrupt routine for GPIO port D here
-;*
-intgpiod: ;höger tryck
-	mov r0, #(GPIOD_GPIOICR & 0xffff) ; nollställ icr
+;* Here is the interrupt routine triggered by port D
+;* Right button click
+
+intgpiod:
+	mov r0, #(GPIOD_GPIOICR & 0xffff) ; reset icr
 	movt r0, #(GPIOD_GPIOICR >> 16)
 	mov r1, #0x80
 	str r1,[r0]
 
-	mov r2, #0x01
-	cmp r2, r10
-	push {lr}
-	bl moveleft
-	pop {lr}
+	mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	ldr r1, [r0]
+	cmp r1, #0x01 ; are we in correct position?
+
+	bne leftstart
+
+	mov r0, #(0x20001000 & 0xffff)
+	movt r0, #(0x20001000 >> 16)
+	mov r1, #0x00
+	str r1, [r0] ; set direction left
+
+	mov r0, #(0x20002000 & 0xffff)
+	movt r0, #(0x20002000 >> 16)
+	str r1, [r0] ; set serve status inactive
+
 	bx lr
-
-;	mov r0, #0x00 ;; sätt riktning vänster
-;	str r0, [r5]
-;	mov r0, #0x2 ;nollställ serv
-;	str r0, [r5]
-
-
-
 
     .align 0x100    ; Place interrupt routine for GPIO port E
                     ; at an adress that ends with two zeros
 ;**********************************************
 ;*
-;* Place your interrupt routine for GPIO port E here
-;*
+;* Here is the interrupt routine triggered by port E
+;* Left button click
+
 intgpioe:
-	mov r0, #(GPIOE_GPIOICR & 0xffff) ; nollställ icr
+	mov r0, #(GPIOE_GPIOICR & 0xffff) ; reset icr
 	movt r0, #(GPIOE_GPIOICR >> 16)
 	mov r1, #0x10
 	str r1,[r0]
-	mov r2, #0x80
-	mov r3, #(GPIOB_GPIODATA & 0xffff)
-	movt r3, #(GPIOB_GPIODATA & 0xffff)
-	cmp r2, r3
-	beq moveright
 
-                    ; Here is the interrupt routine triggered by port E
+	mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	ldr r1, [r0]
+	cmp r1, #0x80 ; are we in correct position?
 
+	bne rightstart
 
+	mov r0, #(0x20001000 & 0xffff)
+	movt r0, #(0x20001000 >> 16)
+	mov r1, #0xFF
+	str r1, [r0] ; set direction right
+
+	mov r0, #(0x20002000 & 0xffff)
+	movt r0, #(0x20002000 >> 16)
+	mov r1, #0x00
+	str r1, [r0] ; set serve status inactive
+
+	bx lr
 
     .align 0x100    ; Next routine is started at an adress in the program memory that ends with two zeros
 
