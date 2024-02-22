@@ -159,7 +159,7 @@ main:
 mainloop:
 	CPSID i
 	bl SKBAK ;16*40 = 640
-	mov r1, #1000
+	mov r1, #1200
 	bl DELAY
 	CPSIE i
 	b mainloop
@@ -197,7 +197,7 @@ intgpiod:
 	mov r1, #0x80
 	str r1,[r0]
 	push{lr}
-	bl SKAVV
+	bl SKAVH
 	pop{lr}
 	bx lr
 
@@ -218,7 +218,7 @@ intgpioe:
 	mov r1, #0x10
 	str r1,[r0]
 	push{lr}
-	bl SKAVH
+	bl SKAVV
 	pop{lr}
 	bx lr
 
