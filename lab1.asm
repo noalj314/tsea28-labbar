@@ -1,712 +1,477 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
-;; Template for lab2 in TSEA28 Datorteknik Y
+;; Mall för lab1 i TSEA28 Datorteknik Y
 ;;
-;; 210105 KPa: Modified for remote version
-;;
-;;
-;; Lab 2: Use two ports for interrupts: Port E pin 4 and port D pin 7
-;;
-;;    Port B pin 0-7 defined as outputs
-;;    Port D pin 2,3,6,7 defined as inputs, pin 7 interrupt on rising edge
-;;    Port E pin 0-5 defined as inputs, pin 4 interrupt on rising edge
-;;    Port F pin 0-4 defined as outputs
-
-;;
-;; Predefined subroutines
-;;
-;;  inituart:   Initialize uart0 to use 115200 baud, 8N1.
-;;  initGPIOB:  Initialize port B, all outputs
-;;  initGPIOD:  Initialize port D, interrupt generation on pin 7
-;;  initGPIOE:  Initialize port E. interrupt generation on pin 4
-;;  initGPIOF:  Initialize port F
-;;  initint:    Initialize NVIC to have GPIOD prio 2, GPIOE prio 5
-;;  SKBAK:        Print "Bakgrundsprogram"
-;;  SKAVH:        Print "=====Avbrott hoger"
-;;  SKAVV:        Print "--Avbrott vanster"
-;;  DELAY:        Delay, r1=number of ms to wait
+;; 210105 KPa: Modified for distance version
 ;;
 
-	.thumb	; Code is using Thumb mode
-	.text	; Code is put into the program memory
+	;; Ange att koden är för thumb mode
+	.thumb
+	.text
+	.align 2
 
-;*****************************************************
-;*
-;* Constants that are not stored in pogram memory
-;*
-;* Used together with offset constants defined below
-;*
-;*****************************************************
-UART0_base   .equ    0x4000c000    ; Start adress for UART
-
-GPIOA_base   .equ    0x40004000    ; General Purpose IO port A start adress
-GPIOB_base   .equ    0x40005000    ; General Purpose IO port B start adress
-GPIOC_base   .equ    0x40006000    ; General Purpose IO port C start adress
-GPIOD_base   .equ    0x40007000    ; General Purpose IO port D start adress
-GPIOE_base   .equ    0x40024000    ; General Purpose IO port E start adress
-GPIOF_base   .equ    0x40025000    ; General Purpose IO port F start adress
-
-GPIO_HBCTL   .equ    0x400FE06C    ; GPIO buss choise
-
-NVIC_base    .equ    0xe000e000    ; Nested Vectored Interrupt Controller
-
-GPIO_KEY     .equ    0x4c4f434b    ; Key value to unlock configuration registers
-
-RCGCUART     .equ    0x400FE618    ; Enable UART port
-RCGCGPIO     .equ    0x400fe608    ; Enable GPIO port
-
-;*****************************************************
-;
-; Use as offset together with base-definitions above
-; 
-;*****************************************************
-UARTDR      .equ    0x0000    ; Data register
-UARTFR      .equ    0x0018    ; Flag register
-UARTIBRD    .equ    0x0024    ; Baud rate control1
-UARTFBRD    .equ    0x0028    ; Baud rate control2
-UARTLCRH    .equ    0x002c    ;
-UARTCTL     .equ    0x0030    ; Control register
-
-GPIODATA    .equ    0x03fc    ; Data register
-GPIODIR     .equ    0x0400    ; Direction select
-GPIOIS      .equ    0x0404    ; interrupt sense
-GPIOIBE     .equ    0x0408    ; interrupt both edges
-GPIOIEV     .equ    0x040c    ; interrupt event
-GPIOIM      .equ    0x0410    ; interrupt mask
-GPIORIS     .equ    0x0414    ; raw interrupt status
-GPIOMIS     .equ    0x0418    ; masked interrupt status
-GPIOICR     .equ    0x041c    ; interrupt clear
-GPIOAFSEL   .equ    0x0420    ; alternate function select
-GPIODR2R    .equ    0x0500    ; 2 mA Drive select
-GPIODR4R    .equ    0x0504    ; 4 mA Drive select
-GPIODR8R    .equ    0x0508    ; 8 mA Drive select
-GPIOODR     .equ    0x050c    ; Open drain select
-GPIOPUR     .equ    0x510    ; pull-up select
-GPIOPDR     .equ    0x514    ; pull-down select
-GPIOSLR     .equ    0x518    ; slew rate control select
-GPIODEN     .equ    0x51c    ; digital enable
-GPIOLOCK    .equ    0x520    ; lock register
-GPIOCR      .equ    0x524    ; commit
-GPIOAMSEL   .equ    0x528    ; analog mode select
-GPIOPCTL    .equ    0x52c    ; port control
-
-NVIC_EN0    .equ    0x100    ; Enable interrupt 0-31
-NVIC_PRI0   .equ    0x400    ; Select priority interrupts 0-3
-NVIC_PRI1   .equ    0x404    ; Select priority interrupts 4-7
-NVIC_PRI7   .equ    0x41c    ; Select priority interrupts 28-31
-NVIC_PRI12  .equ    0x430    ; Select priority interrupts 48-51
-
-
-;*****************************************************
-;
-; Definitions found in "Introduktion till Darma"
-; 
-;*****************************************************
-
-GPIOB_GPIODATA	.equ	0x400053fc ; dataregister port B
-GPIOB_GPIODIR	.equ	0x40005400 ; riktningsregister port B
-GPIOD_GPIODATA	.equ	0x40007330 ; dataregister port D
-GPIOD_GPIODIR	.equ	0x40007400 ; riktningsregister port D
-GPIOD_GPIOICR	.equ	0x4000741c ; rensa avbrottsrequest port D
-GPIOE_GPIODATA	.equ	0x400240fc ; dataregister port E
-GPIOE_GPIODIR	.equ	0x40024400 ; riktningsregister port E
-GPIOE_GPIOICR	.equ	0x4002441c ; rensa avbrottsrequest port E
-GPIOF_GPIODATA	.equ	0x4002507c ; dataregister port F
-GPIOF_GPIODIR	.equ	0x40025400 ; riktningsregister port F
-GPIOF_GPIOICR	.equ	0x4002541c ; rensa avbrottrequest port F
-	
-	
-;*****************************************************
-;
-; Texts used by SKBAK, SKAVH, SKAVV
-; 
-;*****************************************************
-	
-            .align 4    ; make sure these constants start on 4 byte boundary
-Bakgrundstext    .string    "Bakgrundsprogram",13,10,0
-Lefttextstart    .string "----AVBROTT v",0xe4, "nster",13,10,0
-Leftstar         .string "----------*",13,10,0
-Lefttextend      .string "----SLUT v",0xe4, "nster",13,10,0
-Righttextstart   .string "==============AVBROTT h",0xf6, "ger",13,10,0
-Rightstar        .string "====================*",13,10,0
-Righttextend     .string "==============SLUT h",0xf6, "ger",13,10,0
-
-    
-    .global main    ; main is defined in this file
-    .global intgpiod    ; intgpiod is defined in this file
-    .global intgpioe    ; intgpioe is defined in this file
-
-    .align 0x100    ; Start main at an adress ending with two zeros
+	;; Ange att labbkoden startar här efter initiering
+	.global	main
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Place your program here
 ;;
-;;                 student LiU-ID: noalj314
-;; + lab group participant LiU-ID: kevma271
-
-; 0x20001000, r5 riktning
-; 0x20001001, r6 servestatus
-; 0x20001002, r7 poäng vänster
-; 0x20001003, r8 poäng höger
-;s
+;; Ange vem som skrivit koden
+;;               student LiU-ID:noalj314
+;; + ev samarbetspartner LiU-ID:kevma271
+;;
+;; Placera programmet här
 
 main:
-	bl initGPIOD
-	bl initGPIOE
-	bl initGPIOB
-	bl inituart
-	bl initint
+   	bl inituart                                                             ; Start av programmet
+   	bl initGPIOE
+   	bl initGPIOF
 
-mainloop:
+	;; vi sätter den korrekta koden till 0000
+	mov r0,#(0x20001013 & 0xffff)
+	movt r0,#(0x20001013 >> 16)
+	mov r1, #0
+	strb r1,[r0]
 
-	mov r1, #(0x20001000 & 0xffff)
-	movt r1, #(0x20001000 >> 16)
-	mov r0, #0x00 ; bollen börjar att gå till vänster
-	str r0, [r1]
+	mov r0,#(0x20001012 & 0xffff)
+	movt r0,#(0x20001012 >> 16)
+	mov r1, #0
+	strb r1,[r0]
 
-	mov r1, #(0x20002000 & 0xffff)
-	movt r1, #(0x20002000 >> 16) ;; serverstatus ja
-	mov r0, #0xFF
-	str r0, [r1]
+	mov r0,#(0x20001011 & 0xffff)
+	movt r0,#(0x20001011 >> 16)
+	mov r1, #0
+	strb r1,[r0]
 
-	mov r1, #(0x20003000 & 0xffff)
-	movt r1, #(0x20003000 >> 16)
-	mov r0, #0 ; nollställ pooäng
-	str r0, [r1]
+	mov r0,#(0x20001010 & 0xffff)
+	movt r0,#(0x20001010 >> 16)
+	mov r1, #0
+	strb r1,[r0]
 
-	mov r1, #(0x20004000 & 0xffff)
-	movt r1, #(0x20004000 >> 16)
-	str r0, [r1]
+activate:
+	mov r7, #0
+	mov r8, #0 
+ 	bl activatealarm
 
+clearinp:
+ 	bl clearinput
 
-	mov r1, #(GPIOB_GPIODATA & 0xffff)
-	movt r1, #(GPIOB_GPIODATA >> 16)
-	mov r10, #0x01 ; lysdiod höger tänds
-	str r10, [r1]
+unlockkey:
+ 	bl getkey
+ 	cmp r4, #0xF
+ 	beq codeentered  ;; om knapptrycket är F
+ 	cmp r4, #9
+ 	bgt clearinp
+ 	bl addkey
+ 	b unlockkey
 
-serveloop:
+codeentered:
+	bl checkcode
+	cmp r4, #0
+	beq wrongcode
+	b deactivate
 
-	;beq yes serve subrutin
+wrongcode:
+	adr r4, wrongstr
+	mov r5, #13 ;; längden på strängen som skickas in
+	bl printstring
+	b clearinp
 
-	;no? flytta bollen i riktning
-	mov r1, #(0x20002000 & 0xffff)
-	movt r1, #(0x20002000 >> 16)
+deactivate:
+	bl deactivatealarm
+	b lockkey
 
-	ldr r0, [r1]
-	cmp r0, #0xFF
-	bne serveloop
-	bl moveleft
-	mov r1, #1000
-	bl DELAY
+lockkey:
+	bl getkey
+ 	cmp r4, #0xA
+ 	bne lockkey
+ 	b activate
 
-	b serveloop
-
-	;delay 1 sek
-	;Dags för poäng nej = flytta bollen, ja= poäng + serveloop
-
-moveball:
-	cmp r5, #0x00
-	bne moveright
-	beq moveleft
+printwrongs:
+	push{lr}
+	add r8, r8, #0x30 ;; för att göra det till ascci
+	mov r0, r8
+	bl printchar ;; skriver ut tiotalet
+	add r7, r7, #0x30
+	mov r0, r7
+	bl printchar ;; skriver ut entalet
+	sub r8, r8, #0x30 ;; för att få den att kunna räkna igen
+	sub r7, r7, #0x30 
+	pop{lr}
 	bx lr
 
-moveleft:
-	LSL r10, r10, #1
-	str r10, [r9]
-	bx lr
 
-moveright:
-	LSR r10, r10, #1
-	str r10, [r9]
+wrongstr:
+	.string "Felaktig kod!", 10, 13
+; Funktion: Skriver ut str¨angen mha subrutinen printchar
 
-
-
-    .align 0x100    ; Place interrupt routine for GPIO port D at an adress that ends with two zeros
-;***********************************************
-;*
-;* Place your interrupt routine for GPIO port D here
-;*
-intgpiod: ;höger tryck
-	mov r0, #(GPIOD_GPIOICR & 0xffff) ; nollställ icr
-	movt r0, #(GPIOD_GPIOICR >> 16)
-	mov r1, #0x80
-	str r1,[r0]
-
-	mov r2, #0x01
-	cmp r2, r10
-
-	mov r0, #0x00 ;; sätt riktning vänster
- 	str r0, [r5]
- 	mov r0, #0x11 ;nollställ serv
-	str r0, [r5]
-
+increment:
+	cmp r7, #9
+	beq incrementtens
 	add r7, r7, #1
+	bx lr 
+
+incrementtens:
+	add r8, r8, #1
+	mov r7, #0
+	bx lr
+
+endloop:
+	b endloop
 
 
+printstring:
+   push {lr} ;; Spara återvändsadress
+   mov r6,#0x0
+
+stringloop:
+   ldrb r0, [r4] ;; ladda ett byte från r4 och ha det temporärt i r0
+   bl printchar ;; vi printar en karaktär
+   add r4, r4, #1 ;; lägg till 1 i r4
+   add r6, r6, #1 ;; lägg till 1 i r6
+   cmp r5, r6 ;; jämför r5 r6, r5 är ju längden på strängen
+   bne stringloop ;; om inte lika så loopar vi tillbaka
+   pop {lr} ;; om lika så återvänder vi till länkregistret
+   bx lr
+
+; Funktion: T¨ander gr¨on lysdiod (bit 3 = 1, bit 2 = 0, bit 1 = 0, bit 0 = 0)
+
+deactivatealarm:
+   	mov r0, #0x8 ;; värde  0000 1000
+   	mov r1,#(GPIOF_GPIODATA & 0xffff)
+	movt r1,#(GPIOF_GPIODATA >> 16)
+   	strb r0, [r1]
+	bx lr
+
+activatealarm:
+	mov r0, #0x02 ;; värde 0010
+	mov r1, #(GPIOF_GPIODATA & 0xffff)
+	movt r1, #(GPIOF_GPIODATA >> 16)
+	strb r0, [r1]
+	bx lr
+
+;; Ovre halvan av programmet motsvarar tangentbordet, d¨ar bitm¨onstret
+; f¨or knapparna som trycks l¨aggs ut p˚a bitarna 3-0 i port E, och bit 4 i port E
+;; anger om knappen trycks ned eller inte.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Inargument: Inga
+; Utargument: Tryckt knappt returneras i r4
+
+getkey:
+	mov r1,#(GPIOE_GPIODATA & 0xffff)
+	movt r1,#(GPIOE_GPIODATA >> 16)
+
+waitForKeyPress: ;; kollar ifall knappen blir nedtryckt
+	ldrb r4, [r1]
+	ands r5, r4, #0x10
+	beq waitForKeyPress ;; om stroben inte är ett dvs ingen knapp är nedtryckt
+
+waitForKeyUp: ;; kollar ifall knappen fortfarande är nedtryckt
+	ldrb r4, [r1]
+	ands r5, r4, #0x10
+	bne waitForKeyUp
+	bx lr
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Inargument: Vald tangent i r4
+; Utargument: Inga
+;
+; Funktion: Flyttar inneh˚allet p˚a 0x20001000-0x20001002 fram˚at en byte
+; till 0x20001001-0x20001003. Lagrar sedan inneh˚allet i r4 p˚a
+; adress 0x20001000.
+addkey:
+	mov r0,#(0x20001000 & 0xffff)
+	movt r0,#(0x20001000 >> 16)
+	mov r1,#(0x20001001 & 0xffff)
+	movt r1,#(0x20001001 >> 16)
+	mov r2,#(0x20001002 & 0xffff)
+	movt r2,#(0x20001002 >> 16)
+	mov r3,#(0x20001003 & 0xffff)
+	movt r3,#(0x20001003 >> 16)
 
 
-    .align 0x100    ; Place interrupt routine for GPIO port E
-                    ; at an adress that ends with two zeros
-;**********************************************
-;*
-;* Place your interrupt routine for GPIO port E here
-;*
-intgpioe:
-	mov r0, #(GPIOE_GPIOICR & 0xffff) ; nollställ icr
-	movt r0, #(GPIOE_GPIOICR >> 16)
-	mov r1, #0x10
-	str r1,[r0]
-	mov r2, #0x80
-	mov r3, #(GPIOB_GPIODATA & 0xffff)
-	movt r3, #(GPIOB_GPIODATA & 0xffff)
-	cmp r2, r3
-	beq moveright
+	ldrb r5, [r2]
+	strb r5, [r3]
+	ldrb r5, [r1]
+	strb r5, [r2]
+	ldrb r5, [r0]
+	strb r5, [r1]
+	strb r4, [r0]
 
-                    ; Here is the interrupt routine triggered by port E
+	bx lr
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-    .align 0x100    ; Next routine is started at an adress in the program memory that ends with two zeros
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Inargument: Inga
+; Utargument: Inga
+;
+; Funktion: S¨atter inneh˚allet p˚a 0x20001000-0x20001003 till 0xFF
+clearinput:
+; Lagrar alla relevanta minnesadresser till register
+	mov r0,#(0x20001000 & 0xffff)
+	movt r0,#(0x20001000 >> 16)
+	mov r1,#(0x20001001 & 0xffff)
+	movt r1,#(0x20001001 >> 16)
+	mov r2,#(0x20001002 & 0xffff)
+	movt r2,#(0x20001002 >> 16)
+	mov r3,#(0x20001003 & 0xffff)
+	movt r3,#(0x20001003 >> 16)
+
+; Sätter register r5 till 0xFF och uppdaterar sedan resterande register med det värdet
+	mov r5, #0xFF
+	strb r5, [r0]
+	strb r5, [r1]
+	strb r5, [r2]
+	strb r5, [r3]
+
+	bx lr
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Inargument: Inga
+; Utargument: Returnerar 1 i r4 om koden var korrekt, annars 0 i r4
+;0x20001010–0x20001013: H¨ar ska den korrekta koden finnas lagrad. F¨orsta
+;siffran i koden placeras i 0x20001013 och sista siffran i 0x20001010.
+
+checkcode:
+	mov r0,#(0x20001010 & 0xffff) ; den korrekta koden
+	movt r0,#(0x20001010 >> 16)
+
+	mov r1,#(0x20001000 & 0xffff) ; användarenskod
+	movt r1,#(0x20001000 >> 16)
+	ldr r2, [r0] ;; korrekt kod laddas
+	ldr r3, [r1] ;; fel kod laddas
+	cmp r2, r3 ;; jämför korrekt med fel
+	bne badCode
+
+	mov r4, #1 ; returnera 1 ifall koden är rätt
+	bx lr
+
+badCode:
+	mov r4, #0 ; annars returnera 0
+	bx lr
 
 
-;*******************************************************************************************************
-;*
-;* Subrutines. Nothing of this needs to be changed in the lab.
-;*
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-    .align 2
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;,
+;;;
+;;; Allt här efter ska inte ändras
+;;;
+;;; Rutiner för initiering
+;;; Se labmanual för vilka namn som ska användas
+;;;
 
-;* SKBAK: Prints the text "Bakgrundsprogram" slowly
-;* Destroys r3, r2, r1, r0
-SKBAK:
-    push {lr}
-    adr  r3,Bakgrundstext
-    bl   slowprintstring
-    pop  {lr}
-    bx   lr
+	.align 4
 
-;* SKAVV: Prints the text "Avbrott vanster" followed by 5 lines
-;*        with - and a star at the end
-;* Destroys r3, r2, r1, r0
-SKAVV:
-    push {lr}
-    adr  r3,Lefttextstart
-    bl   slowprintstring
-    mov  r2,#5
-leftloop:
-    mov  r1,#1200
-    bl   DELAY
-    adr  r3,Leftstar
-    bl   slowprintstring
-    subs r2,r2,#1
-    bne  leftloop
-    adr  r3,Lefttextend
-    bl   slowprintstring
-    pop  {lr}
-    bx   lr
+;; 	Initiering av seriekommunikation
+;;	Förstör r0, r1
 
-;* SKAVH: Prints the text "Avbrott hoger" followed by 5 lines
-;*        with = and a star at the end
-;* Destroys r3, r2, r1, r0
-SKAVH:
-    push {lr}
-    adr  r3,Righttextstart
-    bl   slowprintstring
-    mov  r2,#5
-rightloop:
-    mov r1,#1200
-    bl   DELAY
-    adr  r3,Rightstar
-    bl   slowprintstring
-    subs r2,r2,#1
-    bne  rightloop
-    adr  r3,Righttextend
-    bl   slowprintstring
-    pop  {lr}
-    bx   lr
-
-;* DELAY:
-;* r1 = number of ms
-DELAY:
-    push {r0,r1}
-loop_millisecond:
-    mov  r0,#0x1300
-loop_delay:
-    subs r0,r0,#1
-    bne  loop_delay
-    subs r1,r1,#1
-    bne  loop_millisecond
-    pop  {r0,r1}
-    bx   lr
-
-;* inituart: Initialize serial communiation (enable UART0, set baudrate 115200, 8N1 format)
 inituart:
-    mov  r1,#(RCGCUART & 0xffff)
-    movt r1,#(RCGCUART >> 16)
-    ldr  r0,[r1]
-    orr  r0,#0x01
-    str  r0,[r1]
+	mov r1,#(RCGCUART & 0xffff)		; Koppla in serieport
+	movt r1,#(RCGCUART >> 16)
+	mov r0,#0x01
+	str r0,[r1]
 
-;   activate  GPIO Port A
-    mov  r1,#(RCGCGPIO & 0xffff)
-    movt r1,#(RCGCGPIO >> 16)
-    ldr  r0,[r1]
-    orr  r0,#0x01
-    str  r0,[r1]
+	mov r1,#(RCGCGPIO & 0xffff)
+	movt r1,#(RCGCGPIO >> 16)
+	ldr r0,[r1]
+	orr r0,r0,#0x01
+	str r0,[r1]		; Koppla in GPIO port A
 
-    nop
-    nop
-    nop
+	nop			; vänta lite
+	nop
+	nop
 
-;   Connect pin 0 and 1 on GPIO port A to the UART function (default for UART0)
-;   Allow alt function and enable digital I/O on  port A pin 0 and 1
-    mov  r1,#(GPIOA_base & 0xffff)
-    movt r1,#(GPIOA_base >> 16)
-    ldr  r0,[r1,#GPIOAFSEL]
-    orr  r0,#0x03
-    str  r0,[r1,#GPIOAFSEL]
+	mov r1,#(GPIOA_GPIOAFSEL & 0xffff)
+	movt r1,#(GPIOA_GPIOAFSEL >> 16)
+	mov r0,#0x03
+	str r0,[r1]		; pinnar PA0 och PA1 som serieport
 
-    ldr  r0,[r1,#GPIODEN]
-    orr  r0,#0x03
-    str  r0,[r1,#GPIODEN]
+	mov r1,#(GPIOA_GPIODEN & 0xffff)
+	movt r1,#(GPIOA_GPIODEN >> 16)
+	mov r0,#0x03
+	str r0,[r1]		; Digital I/O på PA0 och PA1
 
-;   Set clockfrequency on the uart, calculated as BRD = 16 MHz / (16 * 115200) = 8.680556
-;    => BRDI = 8, BRDF=0.6805556, DIVFRAC=(0.6805556*64+0.5)=44 
-;      Final settting of uart clock:
-;         8 in UARTIBRD (bit 15 to 0 in UARTIBRD)
-    mov  r1,#(UART0_base & 0xffff)
-    movt r1,#(UART0_base >> 16)
-    mov  r0,#0x08
-    str  r0,[r1,#UARTIBRD]
+	mov r1,#(UART0_UARTIBRD & 0xffff)
+	movt r1,#(UART0_UARTIBRD >> 16)
+	mov r0,#0x08
+	str r0,[r1]		; Sätt hastighet till 115200 baud
+	mov r1,#(UART0_UARTFBRD & 0xffff)
+	movt r1,#(UART0_UARTFBRD >> 16)
+	mov r0,#44
+	str r0,[r1]		; Andra värdet för att få 115200 baud
 
-;        44 in UARTFBRD (bit 5 to 0 in UARTFBRD)
-    mov  r0,#44
-    str  r0,[r1,#UARTFBRD]
+	mov r1,#(UART0_UARTLCRH & 0xffff)
+	movt r1,#(UART0_UARTLCRH >> 16)
+	mov r0,#0x60
+	str r0,[r1]		; 8 bit, 1 stop bit, ingen paritet, ingen FIFO
 
-;   initialize 8 bit, no FIFO buffert, 1 stop bit, no paritety bit (0x60 to bit 7 to 0 in UARTLCRH)
-    mov  r0,#0x60
-    str  r0,[r1,#UARTLCRH]
+	mov r1,#(UART0_UARTCTL & 0xffff)
+	movt r1,#(UART0_UARTCTL >> 16)
+	mov r0,#0x0301
+	str r0,[r1]		; Börja använda serieport
 
-;   activate uart (0 to bits 15 and 14, 0 to bit 11, 0x6 to bits 9 to 7, 0x01 to bits 5 downto 0 in UARTCTL)
+	bx  lr
 
-    mov  r0,#0x0301
-    str  r0,[r1,#UARTCTL]
+; Definitioner för registeradresser (32-bitars konstanter)
+GPIOHBCTL	.equ	0x400FE06C
+RCGCUART	.equ	0x400FE618
+RCGCGPIO	.equ	0x400fe608
+UART0_UARTIBRD	.equ	0x4000c024
+UART0_UARTFBRD	.equ	0x4000c028
+UART0_UARTLCRH	.equ	0x4000c02c
+UART0_UARTCTL	.equ	0x4000c030
+UART0_UARTFR	.equ	0x4000c018
+UART0_UARTDR	.equ	0x4000c000
+GPIOA_GPIOAFSEL	.equ	0x40004420
+GPIOA_GPIODEN	.equ	0x4000451c
+GPIOE_GPIODATA	.equ	0x400240fc
+GPIOE_GPIODIR	.equ	0x40024400
+GPIOE_GPIOAFSEL	.equ	0x40024420
+GPIOE_GPIOPUR	.equ	0x40024510
+GPIOE_GPIODEN	.equ	0x4002451c
+GPIOE_GPIOAMSEL	.equ	0x40024528
+GPIOE_GPIOPCTL	.equ	0x4002452c
+GPIOF_GPIODATA	.equ	0x4002507c
+GPIOF_GPIODIR	.equ	0x40025400
+GPIOF_GPIOAFSEL	.equ	0x40025420
+GPIOF_GPIODEN	.equ	0x4002551c
+GPIOF_GPIOLOCK	.equ	0x40025520
+GPIOKEY		.equ	0x4c4f434b
+GPIOF_GPIOPUR	.equ	0x40025510
+GPIOF_GPIOCR	.equ	0x40025524
+GPIOF_GPIOAMSEL	.equ	0x40025528
+GPIOF_GPIOPCTL	.equ	0x4002552c
 
-    bx   lr
-
-    .align 0x10
-
-; initGPIOB, set GPIO port B pin 7 downto 0 as outputs
-; destroys r0, r1
-initGPIOB:
-    mov  r1,#(RCGCGPIO & 0xffff)
-    movt r1,#(RCGCGPIO >> 16)
-    ldr  r0,[r1]
-    orr  r0,#0x02    ; Activate GPIO port B
-    str  r0,[r1]
-    nop              ; 5 clock cycles before the port can be used
-    nop
-    nop
-
-    mov  r1,#(GPIO_HBCTL & 0xffff)    ; Select bus for GPIOB
-    movt r1,#(GPIO_HBCTL >> 16)
-    ldr  r0,[r1]
-    bic  r0,#0x02       ; Select apb bus for GPIOB (reset bit 1)
-    str  r0,[r1]
-
-    mov  r1,#(GPIOB_base & 0xffff)
-    movt r1,#(GPIOB_base >> 16)
-    mov  r0,#0xff    ; all pins are outputs
-    str  r0,[r1,#GPIODIR]
-
-    mov  r0,#0        ; all pins connects to the GPIO port
-    str  r0,[r1,#GPIOAFSEL]
-
-    mov  r0,#0x00    ; disable analog function
-    str  r0,[r1,#GPIOAMSEL]
-
-    mov  r0,#0x00    ; Use port B as GPIO without special functions
-    str  r0,[r1,#GPIOPCTL]
-
-    mov  r0,#0x00    ; No pullup pins on port B
-    str  r0,[r1,#GPIOPUR]
-
-    mov  r0,#0xff    ; all pins are digital I/O
-    str  r0,[r1,#GPIODEN]
-
-    bx   lr
-
-
-; initGPIOD, set pins 2,3,6,7 as inputs
-; destroy r0, r1
-initGPIOD:
-    mov  r1,#(RCGCGPIO & 0xffff)
-    movt r1,#(RCGCGPIO >> 16)
-    ldr  r0,[r1]
-    orr  r0,#0x08    ; aktivera GPIO port D clocking
-    str  r0,[r1]
-    nop              ; 5 clock cycles before the port can be used
-    nop
-    nop
-
-    mov  r1,#(GPIO_HBCTL & 0xffff)    ; do not use ahb for GPIOD
-    movt r1,#(GPIO_HBCTL >> 16)
-    ldr  r0,[r1]
-    bic  r0,#0x08       ; use apb bus for GPIOD
-    str  r0,[r1]
-
-    mov  r1,#(GPIOD_base & 0xffff)
-    movt r1,#(GPIOD_base >> 16)
-    mov  r0,#(GPIO_KEY & 0xffff)
-    movt r0,#(GPIO_KEY >> 16)
-    str  r0,[r1,#GPIOLOCK]        ; unlock port D configuration register
-
-    mov  r0,#0xcc    ; Allow the 4 pins in the port to be configured
-    str  r0,[r1,#GPIOCR]
-
-    mov  r0,#0x0        ; all are inputs
-    str  r0,[r1,#GPIODIR]
-
-    mov  r0,#0        ; all pins are GPIO pins
-    str  r0,[r1,#GPIOAFSEL]
-
-    mov  r0,#0x00    ; disable analog function
-    str  r0,[r1,#GPIOAMSEL]
-
-    mov  r0,#0x00    ; Use port D as GPIO without special functions
-    str  r0,[r1,#GPIOPCTL]
-
-    mov  r0,#0x00    ; No pullup on port D
-    str  r0,[r1,#GPIOPUR]
-
-    mov  r0,#0xff    ; all pins are digital I/O
-    str  r0,[r1,#GPIODEN]
-
-    bx    lr
-
-; initGPIOE, set pins bit 0-5 as inputs
-; destroys r0, r1
-initGPIOE:
-    mov  r1,#(RCGCGPIO & 0xffff)
-    movt r1,#(RCGCGPIO >> 16)
-    ldr  r0,[r1]
-    orr  r0,#0x10    ; activate GPIO port E
-    str  r0,[r1]
-    nop              ; 5 clock cycles before the port can be used
-    nop
-    nop
-
-    mov  r1,#(GPIO_HBCTL & 0xffff)    ; Do not use ahb (high performance bus) for GPIOE
-    movt r1,#(GPIO_HBCTL >> 16)
-    ldr  r0,[r1]
-    bic  r0,#0x10       ; use apb bus for GPIOE
-    str  r0,[r1]
-
-    mov  r1,#(GPIOE_base & 0xffff)
-    movt r1,#(GPIOE_base >> 16)
-    mov  r0,#0x00        ; all pins are inputs
-    str  r0,[r1,#GPIODIR]
-
-    mov  r0,#0        ; all port bits used as GPIO
-    str  r0,[r1,#GPIOAFSEL]
-
-    mov  r0,#0x00    ; disable analog functionality
-    str  r0,[r1,#GPIOAMSEL]
-
-    mov  r0,#0x00    ; use port E as GPIO without special funtionality
-    str  r0,[r1,#GPIOPCTL]
-
-    mov  r0,#0x00    ; No pullup on port E
-    str  r0,[r1,#GPIOPUR]
-
-    mov  r0,#0x3f    ; all pins are digital I/O
-    str  r0,[r1,#GPIODEN]
-
-    bx   lr
-
-
-; initGPIOF, set pin 0-3 as outputs, pin 4 as input with pullup
-; destroys r0, r1
-
+;; Initiering av port F
+;; Förstör r0, r1, r2
 initGPIOF:
-    mov  r1,#(RCGCGPIO & 0xffff)
-    movt r1,#(RCGCGPIO >> 16)
-    ldr  r0,[r1]
-    orr  r0,#0x20    ; activate GPIO port F
-    str  r0,[r1]
-    nop              ; 5 clock cycles before the port can be used
-    nop
-    nop
+	mov r1,#(RCGCGPIO & 0xffff)
+	movt r1,#(RCGCGPIO >> 16)
+	ldr r0,[r1]
+	orr r0,r0,#0x20		; Koppla in GPIO port F
+	str r0,[r1]
+	nop 			; Vänta lite
+	nop
+	nop
 
-    mov  r1,#(GPIO_HBCTL & 0xffff)    ; Choose bus type for GPIOF
-    movt r1,#(GPIO_HBCTL >> 16)
-    ldr  r0,[r1]
-    bic  r0,#0x20    ; Select GPIOF port connected to the apb bus
-    str  r0,[r1]
+	mov r1,#(GPIOHBCTL & 0xffff)	; Använd apb för GPIO
+	movt r1,#(GPIOHBCTL >> 16)
+	ldr r0,[r1]
+	mvn r2,#0x2f		; bit 5-0 = 0, övriga = 1
+	and r0,r0,r2
+	str r0,[r1]
 
-    mov  r1,#(GPIOF_base & 0xffff)
-    movt r1,#(GPIOF_base >> 16)
-    mov  r0,#(GPIO_KEY & 0xffff)
-    movt r0,#(GPIO_KEY >> 16)
-    str  r0,[r1,#GPIOLOCK]        ; unlock port F configuration registers
+	mov r1,#(GPIOF_GPIOLOCK & 0xffff)
+	movt r1,#(GPIOF_GPIOLOCK >> 16)
+	mov r0,#(GPIOKEY & 0xffff)
+	movt r0,#(GPIOKEY >> 16)
+	str r0,[r1]		; Lås upp port F konfigurationsregister
 
-    mov  r0,#0x1f    ; allow all 5 pins to be configured
-    str  r0,[r1,#GPIOCR]
+	mov r1,#(GPIOF_GPIOCR & 0xffff)
+	movt r1,#(GPIOF_GPIOCR >> 16)
+	mov r0,#0x1f		; tillåt konfigurering av alla bitar i porten
+	str r0,[r1]
 
-    mov  r0,#0x00    ; disable analog function
-    str  r0,[r1,#GPIOAMSEL]
+	mov r1,#(GPIOF_GPIOAMSEL & 0xffff)
+	movt r1,#(GPIOF_GPIOAMSEL >> 16)
+	mov r0,#0x00		; Koppla bort analog funktion
+	str r0,[r1]
 
-    mov  r0,#0x00    ; use port F as GPIO
-    str  r0,[r1,#GPIOPCTL]
+	mov r1,#(GPIOF_GPIOPCTL & 0xffff)
+	movt r1,#(GPIOF_GPIOPCTL >> 16)
+	mov r0,#0x00		; använd port F som GPIO
+	str r0,[r1]
 
-    mov  r0,#0x0f    ; use bit 0-3 as outputs (do NOT press the black buttons on Darma!)
-    str  r0,[r1,#GPIODIR]
+	mov r1,#(GPIOF_GPIODIR & 0xffff)
+	movt r1,#(GPIOF_GPIODIR >> 16)
+	mov r0,#0x0e		; styr LED (3 bits), andra bitar är ingångar
+	str r0,[r1]
 
-    mov  r0,#0        ; all pins is used by GPIO
-    str  r0,[r1,#GPIOAFSEL]
+	mov r1,#(GPIOF_GPIOAFSEL & 0xffff)
+	movt r1,#(GPIOF_GPIOAFSEL >> 16)
+	mov r0,#0		; alla portens bitar är GPIO
+	str r0,[r1]
 
-    mov  r0,#0x10    ; weak pull-up for pin 4
-    str  r0,[r1,#GPIOPUR]
+	mov r1,#(GPIOF_GPIOPUR & 0xffff)
+	movt r1,#(GPIOF_GPIOPUR >> 16)
+	mov r0,#0x11		; svag pull-up för tryckknapparna
+	str r0,[r1]
 
-    mov  r0,#0xff    ; all pins are digitala I/O
-    str  r0,[r1,#GPIODEN]
+	mov r1,#(GPIOF_GPIODEN & 0xffff)
+	movt r1,#(GPIOF_GPIODEN >> 16)
+	mov r0,#0xff		; alla pinnar som digital I/O
+	str r0,[r1]
 
-    bx   lr
-
-
-; initint, initialize interrupt management
-; destroys r0,r1
-; Enable interrupts from pin 7 port D and pin 4 port E
-initint:
-    ; disable interrupts while configuring
-    cpsid    i
-
-    ; Generate interrupt from port D, GPIO port D is interrupt nr 3 (vector 19)
-    ; positiv edge, high priority interrupt
-
-    ; Generete interrupt from port E, GPIO port E is interrupt nr 4 (vector 20)
-    ; positiv edge, low priority interrupt
-
-
-    ; GPIO Port D setup
-    ; interrupt generated by positive edge
-    mov  r1,#(GPIOD_base & 0xffff)
-    movt r1,#(GPIOD_base >> 16)
-    mov  r0,#0x00    ; edge detection
-    str  r0,[r1,#GPIOIS]
-
-    ; clear interrupts (unnecessary)
-    mov  r0,#0xff    ; clear interrupts
-    str  r0,[r1,#GPIOICR]
-
-    ; ignorera fallande flank
-    mov  r0,#0x00    ; Use IEV to control
-    str  r0,[r1,#GPIOIBE]
-
-    ; stigande flank edge
-    mov  r0,#0xcc    ; rising edge
-    str  r0,[r1,#GPIOIEV]
-
-    ;clear interrupts
-    mov  r0,#0xff    ; clear interrupts
-    str  r0,[r1,#GPIOICR]
-
-    ; enable interrupts from bit 7
-    mov  r0,#0x80    ; Send interrupt to controller
-    str  r0,[r1,#GPIOIM]
-
-    ; NVIC management of interrupts from GPIOport D
-    ; NVIC_priority interrupt setup
-    mov  r1,#(NVIC_base & 0xffff)
-    movt r1,#(NVIC_base >> 16)
-    ldr  r0,[r1,#NVIC_PRI0]        ; Set priority 2
-    bic  r0,r0,#0xe0000000        ; clear bits 31-29
-    orr  r0,r0,#0x40000000
-    str  r0,[r1,#NVIC_PRI0]
-
-    ; NVIC_enable port D interrupt
-    ldr  r0,[r1,#NVIC_EN0]
-    orr  r0,#0x00000008            ; enable interrupt nr 3
-    str  r0,[r1,#NVIC_EN0]
+	bx lr
 
 
-    ; GPIO port E setup
-    ; interrupt activated by input signal edge
-    mov  r1,#(GPIOE_base & 0xffff)
-    movt r1,#(GPIOE_base >> 16)
-    mov  r0,#0x00    ; edge detection
-    str  r0,[r1,#GPIOIS]
+;; Initiering av port E
+;; Förstör r0, r1
+initGPIOE:
+	mov r1,#(RCGCGPIO & 0xffff)    ; Clock gating port (slå på I/O-enheter)
+	movt r1,#(RCGCGPIO >> 16)
+	ldr r0,[r1]
+	orr r0,r0,#0x10		; koppla in GPIO port B
+	str r0,[r1]
+	nop			; vänta lite
+	nop
+	nop
 
-    ; clear interrupts (unnecessary)
-    mov  r0,#0xff    ; clear interrupts
-    str  r0,[r1,#GPIOICR]
+	mov r1,#(GPIOE_GPIODIR & 0xffff)
+	movt r1,#(GPIOE_GPIODIR >> 16)
+	mov r0,#0x0		; alla bitar är ingångar
+	str r0,[r1]
 
-    ; Enable positive edge (ignore falling edge)
-    mov  r0,#0x00    ; Use IEV to control
-    str  r0,[r1,#GPIOIBE]
+	mov r1,#(GPIOE_GPIOAFSEL & 0xffff)
+	movt r1,#(GPIOE_GPIOAFSEL >> 16)
+	mov r0,#0		; alla portens bitar är GPIO
+	str r0,[r1]
 
-    mov  r0,#0x10    ; rising edge
-    str  r0,[r1,#GPIOIEV]
+	mov r1,#(GPIOE_GPIOAMSEL & 0xffff)
+	movt r1,#(GPIOE_GPIOAMSEL >> 16)
+	mov r0,#0x00		; använd inte analoga funktioner
+	str r0,[r1]
 
-    ; clear interrupt
-    mov  r0,#0xff    ; clear interrupts
-    str  r0,[r1,#GPIOICR]
+	mov r1,#(GPIOE_GPIOPCTL & 0xffff)
+	movt r1,#(GPIOE_GPIOPCTL >> 16)
+	mov r0,#0x00		; använd inga specialfunktioner på port B
+	str r0,[r1]
 
-    ; enable interrupts from bit 4
-    mov  r0,#0x10    ; Send interrupt to controller
-    str  r0,[r1,#GPIOIM]
+	mov r1,#(GPIOE_GPIOPUR & 0xffff)
+	movt r1,#(GPIOE_GPIOPUR >> 16)
+	mov r0,#0x00		; ingen pullup på port B
+	str r0,[r1]
 
-    ; NVIC setup to handle GPIO port E generated interrupt requests
-    ; NVIC_priority interrupt 4
-    mov  r1,#(NVIC_base & 0xffff)
-    movt r1,#(NVIC_base >> 16)
-    ldr  r0,[r1,#NVIC_PRI1]        ; Set priority 5
-    mvn  r2,#0x000000e0    ; clear bits 7 downto 5
-    and  r0,r2
-    orr  r0,#0x000000a0
-    str  r0,[r1,#NVIC_PRI1]
+	mov r1,#(GPIOE_GPIODEN & 0xffff)
+	movt r1,#(GPIOE_GPIODEN >> 16)
+	mov r0,#0xff		; alla pinnar är digital I/O
+	str r0,[r1]
 
-    ; NVIC_enable allow interrupt nr 4 (port E)
-    ldr  r0,[r1,#NVIC_EN0]
-    orr  r0,#0x00000010
-    str  r0,[r1,#NVIC_EN0]
-
-    ; enable interrupts
-    cpsie i
-
-    bx   lr
+	bx lr
 
 
-; Start adress in r3, string terminated with the value 0
-; destroy r0, r1, r3
-slowprintstring:
-    push {lr}
-nextchar:
-    ldrb r0,[r3],#1
-    cmp  r0,#0
-    beq  slowprintstringdone
-    bl   printchar
-    mov  r1,#40
-    bl   DELAY
-    b    nextchar
-slowprintstringdone:
-    pop  {lr}
-    bx   lr
-
+;; Utskrift av ett tecken på serieport
+;; r0 innehåller tecken att skriva ut (1 byte)
+;; returnerar först när tecken skickats
+;; förstör r0, r1 och r2
 printchar:
-;   Print character located in r0 (bit 7 - bit 0)
-;   Check bit 5 (TXFF) in UART0_FR, wait until it is 0
-;   send bit 7-0 to UART0_DR
-    push {r1}
+	mov r1,#(UART0_UARTFR & 0xffff)	; peka på serieportens statusregister
+	movt r1,#(UART0_UARTFR >> 16)
 loop1:
-    mov  r1,#(UART0_base & 0xffff)
-    movt r1,#(UART0_base >> 16)
-    ldr  r1,[r1,#UARTFR]
-    ands r1,#0x20           ; Check if send buffer is full
-    bne  loop1              ; branch if full 
-    mov  r1,#(UART0_base & 0xffff)
-    movt r1,#(UART0_base >> 16)
-    str  r0,[r1,#UARTDR]    ; send character
-    pop  {r1}
-    bx   lr
+	ldr r2,[r1]			; hämta statusflaggor
+	ands r2,r2,#0x20		; kan ytterligare tecken skickas?
+	bne loop1			; nej, försök igen
+	mov r1,#(UART0_UARTDR & 0xffff)	; ja, peka på serieportens dataregister
+	movt r1,#(UART0_UARTDR >> 16)
+	str r0,[r1]			; skicka tecken
+	bx lr
+
+
 
