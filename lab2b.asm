@@ -148,7 +148,6 @@ Righttextend     .string "==============SLUT h",0xf6, "ger",13,10,0
 ; 0x20001001, r6 servestatus
 ; 0x20001002, r7 poäng vänster
 ; 0x20001003, r8 poäng höger
-; 0x20001004, r9 lysdiod
 ;s
 
 main:
@@ -158,6 +157,7 @@ main:
 	bl inituart
 	bl initint
 
+mainloop:
 
 	mov r5, #(0x20001000 & 0xffff)
 	movt r5, #(0x20001000 >> 16)
@@ -179,17 +179,14 @@ main:
 	str r0, [r8]
 
 
-	mov r9, #(0x20001004 & 0xffff)
-	movt r9, #(0x20001004 >> 16)
-	mov r0, #0x01 ; lysdiod höger tänds
-	str r0, [r9]
+	mov r9, #(GPIOB_GPIODATA & 0xffff)
+	movt r9, #(GPIOB_GPIODATA >> 16)
+	mov r10, #0x01 ; lysdiod höger tänds
+	str r10, [r9]
+	;b mainloop
 
-moveright_loop:
-    bl moveright
-    ; Lägg till en fördröjning här för att göra rörelsen synlig
-    MOV r0, #250 ; Fördröjningslängd, justera efter behov för synlighet
-    bl DELAY
-    B moveright_loop ; Hoppa tillbaka för att flytta igen
+newloop:
+	b newloop
 
 serveloop:
 	;time to serve?
@@ -198,7 +195,6 @@ serveloop:
 
 	;no? flytta bollen i riktning
 	bne moveball
-
 
 	;delay 1 sek
 	;Dags för poäng nej = flytta bollen, ja= poäng + serveloop
@@ -210,21 +206,23 @@ moveball:
 
 
 moveleft:
-	LSL r9, r9, #1
-	mov r0, #(GPIOB_GPIODATA & 0xffff)
-	movt r0, #(GPIOB_GPIODATA >> 16)
-	str r9, [r0]
+	LSL r10, r10, #1
+	;mov r0, #0x02 ; lysdiod höger tänds
+	str r10, [r9]
 	bx lr
+
 
 moveright:
-	LSR r9, r9, #1
-	mov r0, #(GPIOB_GPIODATA & 0xffff)
-	movt r0, #(GPIOB_GPIODATA >> 16)
-	str r9, [r0]
+	LSR r10, r10, #1
+
+	str r10, [r9]
 	bx lr
 
 
-
+pointleft:
+	;mov r0, #(x20001001 & 0xffff)
+	;movt r0, #(x20001001 & 0xffff)
+	;r0,
 
 
 
@@ -233,17 +231,23 @@ moveright:
 ;*
 ;* Place your interrupt routine for GPIO port D here
 ;*
-intgpiod: ;höger serv
+intgpiod: ;höger tryck
 	mov r0, #(GPIOD_GPIOICR & 0xffff) ; nollställ icr
 	movt r0, #(GPIOD_GPIOICR >> 16)
 	mov r1, #0x80
 	str r1,[r0]
-	; serve?
-	; beq
-	mov r0, #0x00 ;; sätt riktning vänster
-	str r0, [r5]
-	mov r0, #0x2 ;nollställ serv
-	str r0, [r5]
+
+	mov r2, #0x01
+	cmp r2, r10
+	push {lr}
+	bl moveleft
+	pop {lr}
+	bx lr
+
+;	mov r0, #0x00 ;; sätt riktning vänster
+;	str r0, [r5]
+;	mov r0, #0x2 ;nollställ serv
+;	str r0, [r5]
 
 
 
@@ -259,6 +263,12 @@ intgpioe:
 	movt r0, #(GPIOE_GPIOICR >> 16)
 	mov r1, #0x10
 	str r1,[r0]
+	mov r2, #0x80
+	mov r3, #(GPIOB_GPIODATA & 0xffff)
+	movt r3, #(GPIOB_GPIODATA & 0xffff)
+	cmp r2, r3
+	beq moveright
+
                     ; Here is the interrupt routine triggered by port E
 
 
@@ -706,7 +716,4 @@ loop1:
     str  r0,[r1,#UARTDR]    ; send character
     pop  {r1}
     bx   lr
-
-
-
 
