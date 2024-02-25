@@ -158,6 +158,16 @@ main:
 	bl initint
 
 initialize:
+	mov r0, #(0x20001000 & 0xffff)
+	movt r0, #(0x20001000 >> 16)
+	mov r1, #0x00 ; set direction left
+	str r1, [r0]
+
+	mov r0, #(0x20002000 & 0xffff)
+	movt r0, #(0x20002000 >> 16)
+	mov r1, #0xFF ; set serve status active
+	str r1, [r0]
+
 	mov r0, #(0x20003000 & 0xffff)
 	movt r0, #(0x20003000 >> 16)
 	mov r1, #0 ; reset leftplayer's score
@@ -172,6 +182,8 @@ initialize:
 	movt r0, #(GPIOB_GPIODATA >> 16)
 	mov r1, #0x01 ; turn on rightest led
 	str r1, [r0]
+
+	b serveloop
 
 rightstart:
 	mov r0, #(GPIOB_GPIODATA & 0xffff)
@@ -195,7 +207,10 @@ rightstart:
 	add r1, r1, #1 ; increment one to rightplayer's score
 	str r1, [r0]
 
-	b serveloop
+	;bl printscore
+
+
+	bx lr
 
 leftstart:
 	mov r0, #(GPIOB_GPIODATA & 0xffff)
@@ -219,6 +234,10 @@ leftstart:
 	add r1, r1, #1 ; increment one to leftplayer's score
 	str r1, [r0]
 
+	;bl printscore
+
+	bx lr
+
 
 serveloop:
 	mov r0, #(0x20002000 & 0xffff)
@@ -226,25 +245,48 @@ serveloop:
 	ldr r1, [r0]
 	cmp r1, #0xFF ; check serve status
 	beq serveloop
-	bl move
-	mov r1, #1000
+	bl checkball
+	mov r1, #75
 	bl DELAY
 
 	b serveloop
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-move:
+checkball:
+	mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	ldr r1, [r0]
+	cmp r1, #0x00 ; check if ball has gone outside
+	bne move	  ; if not, move the ball
+
 	mov r0, #(0x20001000 & 0xffff)
 	movt r0, #(0x20001000 >> 16)
 	ldr r1, [r0]
-	cmp r1, #0x00 ; check direction
-	bne moveright
+	cmp r1, #0x00 ; if it has, check if it was leftplayer's turn
+	beq outsideleft
+	push {lr}
+	bl leftstart
+	pop {lr}
+	b moveend
+
+outsideleft: ; if the ball has gone outside the left side
+	push {lr}
+	bl rightstart
+	pop {lr}
+	b moveend
+
+move: ; check the direction and move the ball one step
+	mov r0, #(0x20001000 & 0xffff)
+	movt r0, #(0x20001000 >> 16)
+	ldr r1, [r0]
+	cmp r1, #0xFF ; check if direction is right
+	beq moveright
 
 	mov r0, #(GPIOB_GPIODATA & 0xffff)
 	movt r0, #(GPIOB_GPIODATA >> 16)
 	ldr r1, [r0]
-	LSL r1, r1, #
+	LSL r1, r1, #1
 	str r1, [r0]
 	b moveend
 
@@ -266,6 +308,7 @@ moveend:
 ;*
 ;* Here is the interrupt routine triggered by port D
 ;* Right button click
+;* Destroys r1, r0
 
 intgpiod:
 	mov r0, #(GPIOD_GPIOICR & 0xffff) ; reset icr
@@ -278,7 +321,7 @@ intgpiod:
 	ldr r1, [r0]
 	cmp r1, #0x01 ; are we in correct position?
 
-	bne leftstart
+	bne wrongright
 
 	mov r0, #(0x20001000 & 0xffff)
 	movt r0, #(0x20001000 >> 16)
@@ -288,7 +331,14 @@ intgpiod:
 	mov r0, #(0x20002000 & 0xffff)
 	movt r0, #(0x20002000 >> 16)
 	str r1, [r0] ; set serve status inactive
+	b endsubd
 
+wrongright:
+	push {lr}
+	bl leftstart
+	pop {lr}
+
+endsubd:
 	bx lr
 
     .align 0x100    ; Place interrupt routine for GPIO port E
@@ -297,6 +347,7 @@ intgpiod:
 ;*
 ;* Here is the interrupt routine triggered by port E
 ;* Left button click
+;* Destroys r1, r0
 
 intgpioe:
 	mov r0, #(GPIOE_GPIOICR & 0xffff) ; reset icr
@@ -309,7 +360,7 @@ intgpioe:
 	ldr r1, [r0]
 	cmp r1, #0x80 ; are we in correct position?
 
-	bne rightstart
+	bne wrongleft
 
 	mov r0, #(0x20001000 & 0xffff)
 	movt r0, #(0x20001000 >> 16)
@@ -320,10 +371,35 @@ intgpioe:
 	movt r0, #(0x20002000 >> 16)
 	mov r1, #0x00
 	str r1, [r0] ; set serve status inactive
+	b endsube
 
+wrongleft:
+	push {lr}
+	bl rightstart
+	pop {lr}
+
+endsube:
 	bx lr
 
     .align 0x100    ; Next routine is started at an adress in the program memory that ends with two zeros
+
+
+;*******************************************************************************************************
+;*
+;* printscore: Prints the text "{leftplayerscore}-{rightplayerscore}" slowly
+;* Destroys r1, r0
+printscore:
+    push {lr}
+	mov r0, #(0x20003000 & 0xffff)
+	movt r0, #(0x20003000 >> 16)
+	mov r1, #(0x20004000 & 0xffff)
+	movt r1, #(0x20004000 >> 16)
+
+	ldr r2, [r0]
+	ldr r3, [r1]
+    bl   slowprintstring
+    pop  {lr}
+    bx   lr
 
 
 ;*******************************************************************************************************
@@ -760,7 +836,7 @@ loop1:
     movt r1,#(UART0_base >> 16)
     ldr  r1,[r1,#UARTFR]
     ands r1,#0x20           ; Check if send buffer is full
-    bne  loop1              ; branch if full 
+    bne  loop1              ; branch if full
     mov  r1,#(UART0_base & 0xffff)
     movt r1,#(UART0_base >> 16)
     str  r0,[r1,#UARTDR]    ; send character
