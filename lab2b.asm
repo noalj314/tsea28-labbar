@@ -207,8 +207,9 @@ rightstart:
 	add r1, r1, #1 ; increment one to rightplayer's score
 	str r1, [r0]
 
-	;bl printscore
-
+	push {lr}
+	bl printscore
+	pop {lr}
 
 	bx lr
 
@@ -234,7 +235,9 @@ leftstart:
 	add r1, r1, #1 ; increment one to leftplayer's score
 	str r1, [r0]
 
-	;bl printscore
+	push {lr}
+	bl printscore
+	pop {lr}
 
 	bx lr
 
@@ -390,15 +393,36 @@ endsube:
 ;* Destroys r1, r0
 printscore:
     push {lr}
-	mov r0, #(0x20003000 & 0xffff)
-	movt r0, #(0x20003000 >> 16)
-	mov r1, #(0x20004000 & 0xffff)
-	movt r1, #(0x20004000 >> 16)
+	mov r1, #(0x20003000 & 0xffff)
+	movt r1, #(0x20003000 >> 16)
+	mov r2, #(0x20004000 & 0xffff)
+	movt r2, #(0x20004000 >> 16)
 
-	ldr r2, [r0]
-	ldr r3, [r1]
-    bl   slowprintstring
-    pop  {lr}
+;; print left player's score
+	ldr r0, [r1]
+	add r0, r0, #0x30 ; convert to ascii
+	push {lr}
+	bl printchar
+	pop {lr}
+
+;; print "-"
+	mov r0, #0x2d
+	push {lr}
+	bl printchar
+	pop {lr}
+
+;; print right player's score
+	ldr r0, [r2]
+	add r0, r0, #0x30
+	push {lr}
+	bl printchar
+	pop {lr}
+
+	mov r0, #0ah
+	push {lr}
+	bl printchar
+	pop {lr}
+
     bx   lr
 
 
@@ -842,4 +866,3 @@ loop1:
     str  r0,[r1,#UARTDR]    ; send character
     pop  {r1}
     bx   lr
-
