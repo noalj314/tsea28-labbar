@@ -159,9 +159,9 @@ main:
 mainloop:
 	CPSID i
 	bl SKBAK ;16*40 = 640
+	CPSIE i
 	mov r1, #1200
 	bl DELAY
-	CPSIE i
 	b mainloop
 
 
