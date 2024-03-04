@@ -58,7 +58,7 @@ RCGCGPIO     .equ    0x400fe608    ; Enable GPIO port
 ;*****************************************************
 ;
 ; Use as offset together with base-definitions above
-; 
+;
 ;*****************************************************
 UARTDR      .equ    0x0000    ; Data register
 UARTFR      .equ    0x0018    ; Flag register
@@ -100,7 +100,7 @@ NVIC_PRI12  .equ    0x430    ; Select priority interrupts 48-51
 ;*****************************************************
 ;
 ; Definitions found in "Introduktion till Darma"
-; 
+;
 ;*****************************************************
 
 GPIOB_GPIODATA	.equ	0x400053fc ; dataregister port B
@@ -114,14 +114,14 @@ GPIOE_GPIOICR	.equ	0x4002441c ; rensa avbrottsrequest port E
 GPIOF_GPIODATA	.equ	0x4002507c ; dataregister port F
 GPIOF_GPIODIR	.equ	0x40025400 ; riktningsregister port F
 GPIOF_GPIOICR	.equ	0x4002541c ; rensa avbrottrequest port F
-	
-	
+
+
 ;*****************************************************
 ;
 ; Texts used by SKBAK, SKAVH, SKAVV
-; 
+;
 ;*****************************************************
-	
+
             .align 4    ; make sure these constants start on 4 byte boundary
 Bakgrundstext    .string    "Bakgrundsprogram",13,10,0
 Lefttextstart    .string "----AVBROTT v",0xe4, "nster",13,10,0
@@ -131,7 +131,7 @@ Righttextstart   .string "==============AVBROTT h",0xf6, "ger",13,10,0
 Rightstar        .string "====================*",13,10,0
 Righttextend     .string "==============SLUT h",0xf6, "ger",13,10,0
 
-    
+
     .global main    ; main is defined in this file
     .global intgpiod    ; intgpiod is defined in this file
     .global intgpioe    ; intgpioe is defined in this file
@@ -146,15 +146,50 @@ Righttextend     .string "==============SLUT h",0xf6, "ger",13,10,0
 
 
 main:
+	bl initGPIOD
+	bl initGPIOE
+	bl initGPIOF
+	bl initGPIOB
+	bl inituart
+	bl initint
 
-mainloop:            ; Remove
-    b    mainloop    ; Remove707
+initloop:
+;* reset the clock
+    mov r1, #(0x20001000 & 0xffff)
+	movt r1, #(0x20001000 >> 16)
+	mov r2, #0x00
+	str r2, [r1]
+
+;* reset the segmentpointer
+	mov r0, #(0x20001004 & 0xffff)
+	movt r0, #(0x20001004 >> 16)
+	strb r2, [r0]
+
+mainloop:
+	nop
+	nop
+	nop
+	b mainloop
+
+    mov r1, #(GPIOF_GPIODATA & 0xffff)
+	movt r1, #(GPIOF_GPIODATA >> 16)
+	mov r3, #0x00
+	str r3, [r1]
+
+    mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	mov r1, #0x5B
+	str r1, [r0]  ; display 2
+
+
+    b    mainloop    ;
+
 
 
 
 SJUSEGTAB   .byte 0x3F ; ’0’
 			.byte 0x06 ; ’1’
-			.byte 0x57 ; ’2’
+			.byte 0x5B ; ’2’
 			.byte 0x4F ; ’3’
 			.byte 0x66 ; ’4’
 			.byte 0x6D ; ’5’
@@ -168,7 +203,45 @@ SJUSEGTAB   .byte 0x3F ; ’0’
 ;*
 ;* Place your interrupt routine for GPIO port D here
 ;*
+
 intgpiod: ;MUX
+	mov r0, #(GPIOD_GPIOICR & 0xffff) ; reset icr
+	movt r0, #(GPIOD_GPIOICR >> 16)
+	mov r1, #0x80
+	str r1,[r0]
+
+;* get the segmentpointer
+	mov r1, #(0x20001004 & 0xffff)
+	movt r1, #(0x20001004 >> 16)
+	ldrb r1, [r0]
+	mov r0, #0x0
+
+	AND r1,r0,#0x0F ; Maska ut siffran (fyra bitar),
+	ADR r2,SJUSEGTAB ; Tabellstart till R2
+	ADD r2,r2,r1 ; Peka ut r¨att byte
+	LDRB r1,[r2] ; H¨amta bitm¨onstret
+
+    mov r0, #(GPIOB_GPIODATA & 0xffff)
+	movt r0, #(GPIOB_GPIODATA >> 16)
+	strb r1, [r0]
+
+	b moveend
+
+	mov r0, #(0x20001004 & 0xffff)
+	movt r0, #(0x20001004 >> 16)
+	ldrb r1, [r0]
+	add r1, r1, #1
+	cmp r1, #0x4
+	beq resetpoint
+	b moveend
+
+resetpoint:
+	mov r1, #0x0
+	strb r1, [r0]
+
+moveend:
+	bx lr
+
                      ; Here is the interrupt routine triggered by port D
 
 
@@ -181,7 +254,12 @@ intgpiod: ;MUX
 ;* Place your interrupt routine for GPIO port E here
 ;*
 intgpioe:
+	mov r0, #(GPIOE_GPIOICR & 0xffff) ; reset icr
+	movt r0, #(GPIOE_GPIOICR >> 16)
+	mov r1, #0x10
+	str r1,[r0]
 
+	bx lr
                     ; Here is the interrupt routine triggered by port E
 
 
@@ -289,7 +367,7 @@ inituart:
     str  r0,[r1,#GPIODEN]
 
 ;   Set clockfrequency on the uart, calculated as BRD = 16 MHz / (16 * 115200) = 8.680556
-;    => BRDI = 8, BRDF=0.6805556, DIVFRAC=(0.6805556*64+0.5)=44 
+;    => BRDI = 8, BRDF=0.6805556, DIVFRAC=(0.6805556*64+0.5)=44
 ;      Final settting of uart clock:
 ;         8 in UARTIBRD (bit 15 to 0 in UARTIBRD)
     mov  r1,#(UART0_base & 0xffff)
@@ -621,7 +699,7 @@ loop1:
     movt r1,#(UART0_base >> 16)
     ldr  r1,[r1,#UARTFR]
     ands r1,#0x20           ; Check if send buffer is full
-    bne  loop1              ; branch if full 
+    bne  loop1              ; branch if full
     mov  r1,#(UART0_base & 0xffff)
     movt r1,#(UART0_base >> 16)
     str  r0,[r1,#UARTDR]    ; send character
